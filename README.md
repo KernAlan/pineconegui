@@ -1,5 +1,7 @@
 # Pinecone Utility GUI
 
+![image](https://github.com/KernAlan/pineconegui/assets/63753020/ab675ce8-f546-4951-b7d7-ec2e31f9ad43)
+
 ## Overview
 Pinecone Utility GUI is a Python application designed to streamline the process of embedding textual data using OpenAI's models and managing these embeddings with Pinecone, a vector database. It provides a graphical interface for processing CSV files, generating embeddings, and performing various operations within Pinecone.
 
@@ -33,7 +35,10 @@ python pinecone_utility.py
 In the GUI:
 - Use the **Browse** button to select your CSV file.
 - Choose the appropriate columns for embedding and metadata.
-- Process the CSV to generate and save embeddings.
+- Process the CSV to generate and save embeddings. This will create a file called **output.json** in your root folder.
+
+![image](https://github.com/KernAlan/pineconegui/assets/63753020/0bb6deec-d3d8-422b-9d5d-9fefa7c14819)
+
 - Initiate Pinecone with your specific environment details.
 - Perform actions like uploading embeddings to Pinecone, fetching data, or deleting vectors.
 
