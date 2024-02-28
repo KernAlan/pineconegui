@@ -4,12 +4,9 @@ import tiktoken
 import logging
 import pandas as pd
 from openai import OpenAI
-from dotenv import load_dotenv
-
 
 class CSVService:
     def __init__(self, logger=None):
-        load_dotenv()
         self.CSV_FILE = ""
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
         self.ENC = tiktoken.encoding_for_model("gpt-3.5-turbo")
@@ -31,18 +28,12 @@ class CSVService:
     def set_file_path(self, file_path):
         self.CSV_FILE = file_path
 
-    def set_selected_columns(self, columns, main_content_column=None):
-        self.selected_columns = columns
-        self.main_content_column = (
-            main_content_column if main_content_column else columns[0]
-        )
-
     def read_csv_file(self, file_path):
         if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
             raise Exception("CSV file missing or empty")
         return pd.read_csv(file_path)
 
-    def process_csv_dataframe(self, df, main_content_column=None, metadata_column=None):
+    def process_csv_dataframe(self, df, main_content_column=None, metadata_columns=None):
         # Check if the main content column is in the DataFrame
         if main_content_column not in df.columns:
             self.logger.error(
@@ -50,31 +41,29 @@ class CSVService:
             )
             raise Exception(f"CSV file is missing the '{main_content_column}' column.")
 
-        # Check if the metadata column is in the DataFrame
-        if metadata_column and metadata_column not in df.columns:
-            self.logger.error(
-                f"The column '{metadata_column}' is missing from the CSV file."
-            )
-            raise Exception(f"CSV file is missing the '{metadata_column}' column.")
+        # Validate metadata_columns
+        for column in metadata_columns:
+            if column not in df.columns:
+                self.logger.error(f"The column '{column}' is missing from the CSV file.")
+                raise Exception(f"CSV file is missing the '{column}' column.")
 
-        # If metadata column is the same as main content column, only select main content column
-        if main_content_column != metadata_column:
-            df = df[[main_content_column, metadata_column]].copy()
-        else:
-            df = df[[main_content_column]].copy()
+        # Ensure unique selection of columns, preserving order
+        columns_to_select = [main_content_column] + [col for col in metadata_columns if col != main_content_column]
+
+        df = df[columns_to_select].copy()
 
         # Add tokens column to measure the size of the content
         self.logger.info("Calculating tokens and adding to dataframe...")
         df["tokens"] = df[main_content_column].apply(
             lambda x: len(self.ENC.encode(str(x)))
         )
-
+        
         if df["tokens"].max() > self.max_embedded_tokens:
             raise ValueError(f"Content exceeds {self.max_embedded_tokens} tokens")
 
         return df
 
-    def create_vectors(self, df, main_content_column=None, metadata_column=None):
+    def create_vectors(self, df, main_content_column=None, metadata_columns=None):
         vectors = []
         self.logger.info("Creating vectors...")
         for index, row in df.iterrows():
@@ -99,12 +88,8 @@ class CSVService:
                 self.logger.error(f"Error in embedding content for row {index}: {e}")
                 continue
 
-            # Build metadata dictionary from selected columns
-            metadata = (
-                {metadata_column: str(row[metadata_column])}
-                if metadata_column in df.columns
-                else {}
-            )
+            # Build metadata dictionary from all selected metadata columns
+            metadata = {column: str(row[column]) for column in metadata_columns}
 
             vectors.append({"id": str(index), "values": response, "metadata": metadata})
             self.logger.info(f"Created new JSON object for index {index}")

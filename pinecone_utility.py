@@ -1,6 +1,6 @@
 import os
 import threading
-from tkinter import ttk
+from tkinter import Listbox, Scrollbar, ttk
 from services.pinecone_service import PineconeService
 import logging
 import tkinter as tk
@@ -9,55 +9,9 @@ from tkinter import simpledialog
 import queue
 from services.csv_service import CSVService
 import json
-from dotenv import load_dotenv
-
-
-class PineconeUtility:
-    """
-    A utility class for interacting with Pinecone API and performing operations on CSV files.
-
-    Args:
-        master: The master tkinter window.
-
-    Attributes:
-        PINECONE_API_KEY (str): The API key for accessing the Pinecone service.
-        OPENAI_API_KEY (str): The API key for accessing the OpenAI service.
-        csv_service (CSVService): An instance of the CSVService class for CSV file operations.
-        pinecone_service (PineconeService): An instance of the PineconeService class for Pinecone operations.
-        log_queue (queue.Queue): A queue for storing log messages.
-        logger (logging.Logger): A logger instance for logging messages.
-        csv_frame (tk.Frame): The frame for CSV section in the GUI.
-        pinecone_frame (tk.Frame): The frame for Pinecone section in the GUI.
-        logger_frame (tk.Frame): The frame for logger section in the GUI.
-        main_content_column_var (tk.StringVar): The variable for storing the selected main content column.
-        main_content_column_dropdown (ttk.Combobox): The dropdown for selecting the main content column.
-        metadata_column_var (tk.StringVar): The variable for storing the selected metadata column.
-        metadata_column_dropdown (ttk.Combobox): The dropdown for selecting the metadata column.
-        csv_file_path (tk.StringVar): The variable for storing the path of the CSV file.
-        csv_file_entry (tk.Entry): The entry field for displaying the CSV file path.
-        browse_button (tk.Button): The button for browsing and selecting a CSV file.
-        process_button (tk.Button): The button for initiating the CSV file processing.
-        environment_var (tk.StringVar): The variable for storing the Pinecone environment.
-        environment_entry (tk.Entry): The entry field for displaying the Pinecone environment.
-        namespace_var (tk.StringVar): The variable for storing the Pinecone namespace.
-        namespace_entry (tk.Entry): The entry field for displaying the Pinecone namespace.
-        index_name_var (tk.StringVar): The variable for storing the Pinecone index name.
-        index_name_entry (tk.Entry): The entry field for displaying the Pinecone index name.
-        init_pinecone_button (tk.Button): The button for initializing the Pinecone service.
-        json_file_path (tk.StringVar): The variable for storing the path of the JSON file.
-        json_file_entry (tk.Entry): The entry field for displaying the JSON file path.
-        browse_json_button (tk.Button): The button for browsing and selecting a JSON file.
-        upload_button (tk.Button): The button for uploading data to Pinecone.
-        fetch_all_button (tk.Button): The button for fetching all data from Pinecone.
-        delete_button (tk.Button): The button for deleting data from Pinecone.
-        log_text (tk.Text): The text widget for displaying log messages.
-    """
-
-    def __init__(self, master):
-        ...
+    
 class PineconeUtility:
     def __init__(self, master):
-        load_dotenv(override=True)
         self.master = master
         self.setup_window()
         self.initialize_logger()
@@ -110,14 +64,14 @@ class PineconeUtility:
             df = self.csv_service.read_csv_file(CSV_FILE)
 
             main_column = self.main_content_column_var.get()
-            metadata_column = self.metadata_column_var.get()
+            metadata_columns = [self.metadata_columns_listbox.get(i) for i in self.metadata_columns_listbox.curselection()]
 
             # Process the CSV dataframe
             df = self.csv_service.process_csv_dataframe(
-                df, main_column, metadata_column
+                df, main_column, metadata_columns
             )
 
-            vectors = self.csv_service.create_vectors(df, main_column, metadata_column)
+            vectors = self.csv_service.create_vectors(df, main_column, metadata_columns)
 
             json_output = {"vectors": vectors}
             self.csv_service.save_json_to_file(json_output, "output.json")
@@ -180,11 +134,13 @@ class PineconeUtility:
             self.csv_frame, self.main_content_column_var, 0, 1
         )
 
-        self.create_label(self.csv_frame, "Metadata Column:", 1, 0)
-        self.metadata_column_var = tk.StringVar(self.master)
-        self.metadata_column_dropdown = self.create_dropdown(
-            self.csv_frame, self.metadata_column_var, 1, 1
-        )
+        self.create_label(self.csv_frame, "Metadata Columns:", 1, 0)
+        self.metadata_columns_listbox = Listbox(self.csv_frame, selectmode='extended', height=10)
+        metadata_columns_scrollbar = Scrollbar(self.csv_frame, orient="vertical")
+        metadata_columns_scrollbar.config(command=self.metadata_columns_listbox.yview)
+        self.metadata_columns_listbox.config(yscrollcommand=metadata_columns_scrollbar.set)
+        metadata_columns_scrollbar.grid(row=1, column=2, pady=5, sticky="ns")
+        self.metadata_columns_listbox.grid(row=1, column=1, pady=5, sticky="ew")
 
         self.csv_file_path = tk.StringVar()
         self.csv_file_entry = self.create_entry(
@@ -273,9 +229,7 @@ class PineconeUtility:
             index_name = self.index_name_var.get()
             pinecone_api_key = self.PINECONE_API_KEY
             # Assuming init_pinecone is a method of PineconeService that initializes the service
-            self.pinecone_service.init_pinecone(
-                environment, index_name, pinecone_api_key, namespace
-            )
+            self.pinecone_service.init_pinecone(index_name)
             self.log_queue.put("Pinecone initialized successfully.")
         except Exception as e:
             self.log_queue.put(
@@ -350,48 +304,21 @@ class PineconeUtility:
 
             # Update dropdowns for Column to Embed and Metadata Column
             self.main_content_column_dropdown["values"] = columns
-            self.metadata_column_dropdown["values"] = columns
+            
+            # Clear existing items in the Listbox
+            self.metadata_columns_listbox.delete(0, tk.END)
+
+            # Populate the Listbox for Metadata Columns with new items
+            for column in columns:
+                self.metadata_columns_listbox.insert(tk.END, column)
 
             # Set default values
             if columns:
                 self.main_content_column_var.set(columns[0])
-                self.metadata_column_var.set(columns[0] if len(columns) > 1 else "")
         except Exception as e:
             self.log_queue.put(
                 f"An error occurred while reading the CSV file: {str(e)}"
             )
-
-    def process_csv_file(self):
-        process_thread = threading.Thread(target=self.process_csv_file_thread)
-        process_thread.start()
-
-    def process_csv_file_thread(self):
-        try:
-            CSV_FILE = self.csv_file_path.get()
-            if not CSV_FILE:
-                self.log_queue.put("No CSV file selected for processing.")
-                return
-            df = self.csv_service.read_csv_file(CSV_FILE)
-            if df is None:
-                self.log_queue.put("Error reading CSV file.")
-                return
-            main_column = self.main_content_column_var.get()
-            metadata_column = self.metadata_column_var.get()
-
-            new_df = self.csv_service.process_csv_dataframe(
-                df, main_column, metadata_column
-            )
-
-            vectors = self.csv_service.create_vectors(
-                new_df, main_column, metadata_column
-            )
-
-            json_output = {"vectors": vectors}
-            output_path = "output.json"
-            self.csv_service.save_json_to_file(json_output, output_path)
-            self.log_queue.put("Processing completed successfully")
-        except Exception as e:
-            self.log_queue.put(f"An error occurred during file processing: {str(e)}")
 
     def upload_to_pinecone_thread(self):
         try:

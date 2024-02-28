@@ -1,35 +1,29 @@
 import csv
 import json
 import os
-import pinecone
-from dotenv import load_dotenv
-
+from pinecone import Pinecone, ServerlessSpec
 
 class PineconeService:
     def __init__(self, logger=None):
-        load_dotenv()
+        self.api_key = os.getenv("PINECONE_API_KEY")
         self.logger = logger
+        self.pc = None
+        self.index = None
         self.initialized = False
 
-    def init_pinecone(self, environment, index_name, api_key, namespace=""):
-        if self.initialized:   # Check if already initialized, but don't stop since we may want to switch Pinecone db's
+    def init_pinecone(self, index_name):
+        if self.initialized:
             self.logger.info("Pinecone is already initialized. Reinitializing...")
         try:
             self.logger.info("Initializing Pinecone...")
-            pinecone.init(api_key=api_key, environment=environment)
-            # Check if the index exists
-            existing_indexes = pinecone.list_indexes()
-            if index_name in existing_indexes:
-                self.logger.info(f"Connecting to existing index: {index_name}")
+            self.pc = Pinecone(api_key=self.api_key)
+            self.index = self.pc.Index(index_name)
+            stats = self.index.describe_index_stats()
+            if stats:
+                self.logger.info(f"Pinecone initialized successfully. Stats: {stats}")
+                self.initialized = True
             else:
-                self.logger.info(f"No existing index found.")
-            self.index = pinecone.Index(index_name)
-            self.namespace = namespace
-            self.initialized = True
-            if self.index.describe_index_stats():
-                self.logger.info("Pinecone initialized successfully.")
-            else:
-                self.logger.error("Pinecone initialization failed.")
+                self.logger.error("Failed to retrieve index stats, Pinecone initialization may have failed.")
         except Exception as e:
             self.logger.error(f"Pinecone initialization failed: {str(e)}")
             raise e
@@ -37,17 +31,16 @@ class PineconeService:
     def upsert_vectors(self, vectors):
         try:
             self.logger.info(f"Found {len(vectors)} vectors in the JSON file.")
-            
             # Transform vectors into the correct format
-            formatted_vectors = [(vec["id"], vec["values"], vec["metadata"]) for vec in vectors]
+            formatted_vectors = [(vec["id"], vec["values"], vec.get("metadata", {})) for vec in vectors]
 
             # Batch vectors in sets of 100
             self.logger.info("Batching vectors...")
-            vector_batches = [formatted_vectors[i: i + 100] for i in range(0, len(formatted_vectors), 100)]
+            vector_batches = [formatted_vectors[i:i + 100] for i in range(0, len(formatted_vectors), 100)]
 
             for i, batch in enumerate(vector_batches):
                 self.logger.info(f"Upserting batch {i + 1}...")
-                self.index.upsert(vectors=batch)
+                self.index.upsert(vectors=batch)  # Make sure this matches your Pinecone SDK's method signature
 
             self.logger.info("Vectors successfully upserted to Pinecone.")
         except Exception as e:
@@ -117,21 +110,16 @@ class PineconeService:
     def delete_vectors(self, ids):
         try:
             self.logger.info(f"Deleting vectors with IDs: {ids}...")
-            delete_response = self.index.delete(ids=ids, namespace=self.namespace)
+            self.index.delete(ids=ids)
             self.logger.info("Vectors successfully deleted.")
         except Exception as e:
             self.logger.error(f"An error occurred during Pinecone delete: {str(e)}")
             raise e
 
-    def update_vector(self, id, values, set_metadata):
+    def update_vector(self, id, values, metadata=None):
         try:
             self.logger.info(f"Updating vector with ID: {id}...")
-            update_response = self.index.update(
-                id=id,
-                values=values,
-                set_metadata=set_metadata,
-                namespace=self.namespace,
-            )
+            self.index.upsert(vectors=[(id, values, metadata or {})])
             self.logger.info("Vector successfully updated.")
         except Exception as e:
             self.logger.error(f"An error occurred during Pinecone update: {str(e)}")
